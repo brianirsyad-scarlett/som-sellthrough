@@ -27,6 +27,10 @@ on:
         description: "Rebuild even if no workbook is newer than the last build"
         type: boolean
         default: false
+      allow_shrink:
+        description: "Accept a quarter workbook with >10% fewer rows than the last build (one-off, after a deliberate correction in the source)"
+        type: boolean
+        default: false
 
 concurrency:
   group: som-sellthrough
@@ -120,7 +124,7 @@ jobs:
           SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
           NOTIFY_TO: ${{ vars.NOTIFY_TO || 'brian.rinaldy@lmbg.co.id' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python -u national_distribution.py run ${{ inputs.force && '--force' || '' }}
+        run: python -u national_distribution.py run ${{ inputs.force && '--force' || '' }} ${{ inputs.allow_shrink && '--allow-shrink' || '' }}
 
       # GitHub switches scheduled workflows off in a public repo after 60 days without repository
       # activity - no matter how often they ran or succeeded. Re-enabling the workflow through the API

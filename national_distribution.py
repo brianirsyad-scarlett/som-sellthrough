@@ -397,7 +397,7 @@ def gate(bucket, force: bool, qs: list) -> tuple[bool, str]:
     return False, "workbooks are newer than both inputs"
 
 
-def validate(name: str, tbl: pd.DataFrame, first: dt.date, last: dt.date, previous) -> list[str]:
+def validate(name: str, tbl: pd.DataFrame, first: dt.date, last: dt.date, previous, allow_shrink: bool = False) -> list[str]:
     problems = []
     if list(tbl.columns) != OUT_COLS:
         problems.append(f"{name}: unexpected columns {list(tbl.columns)}")
@@ -410,7 +410,12 @@ def validate(name: str, tbl: pd.DataFrame, first: dt.date, last: dt.date, previo
             problems.append(f"{name}: only {brand:.1%} of rows matched the product master")
     prev_rows = int((previous.metadata or {}).get("rows", 0)) if previous is not None else 0
     if prev_rows and len(tbl) < MIN_ROWS_VS_PREVIOUS * prev_rows:
-        problems.append(f"{name}: {len(tbl):,} rows is more than 10% below the last cloud build's {prev_rows:,}")
+        if allow_shrink:
+            # a deliberate manual override, e.g. after wrongly dated rows were corrected in the source
+            print(f"  {name}: {len(tbl):,} rows is more than 10% below the last cloud build's {prev_rows:,} - accepted (allow_shrink)")
+        else:
+            problems.append(f"{name}: {len(tbl):,} rows is more than 10% below the last cloud build's {prev_rows:,}"
+                            " (if that is a deliberate correction, run the workflow once with allow_shrink)")
     return problems
 
 
@@ -448,7 +453,8 @@ def run(args) -> int:
         problems = []
         for first, last in qs:
             name = quarter_name(first, last)
-            problems += validate(name, built[name], first, last, bucket.get_blob(OUT_PREFIX + name))
+            problems += validate(name, built[name], first, last, bucket.get_blob(OUT_PREFIX + name),
+                                 allow_shrink=getattr(args, "allow_shrink", False))
         if problems:
             print("NOT published:")
             for p in problems:
@@ -498,6 +504,8 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--force", action="store_true")
     r.add_argument("--no-publish", action="store_true")
+    r.add_argument("--allow-shrink", action="store_true",
+                   help="accept a workbook with >10%% fewer rows than the last build (one-off, after a deliberate correction)")
     b = sub.add_parser("build")
     b.add_argument("--parquet", type=Path, required=True)
     b.add_argument("--master", type=Path, required=True)

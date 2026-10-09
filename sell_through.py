@@ -38,6 +38,10 @@ PRODUCTION = "sales_parquet/Distributor_Sales.parquet"
 BACKUP_PREFIX = "sales_parquet/backup_small/Distributor_Sales-"   # one small file per publish
 KEEP_BACKUPS = 30   # runs every 30 min now, so keep a few days of history
 
+# Reference sheets that are not sales data. They are kept hidden in the workbooks, but are skipped by name as
+# well, so unhiding one while working does not put its rows (and extra columns) in Distributor_Sales.parquet.
+EXCLUDED_SHEETS = {"master_data"}
+
 MIN_ROWS_VS_PRODUCTION = 0.90   # refuse a publish that would shrink the table by more than 10%
 MIN_DATE_FILLED = 0.95          # share of rows with a parseable Date (~1% are empty Bali Nusra rows with Total 0, as on the laptop)
 
@@ -56,7 +60,12 @@ def compile_folder(folder: Path) -> pd.DataFrame:
     frames = []
     for path in files:
         wb = load_workbook(path, read_only=True, data_only=False)
-        visible = [ws.title for ws in wb.worksheets if ws.sheet_state == "visible"]
+        visible = [ws.title for ws in wb.worksheets
+                   if ws.sheet_state == "visible" and ws.title.strip().lower() not in EXCLUDED_SHEETS]
+        skipped = [ws.title for ws in wb.worksheets
+                   if ws.sheet_state == "visible" and ws.title.strip().lower() in EXCLUDED_SHEETS]
+        if skipped:
+            print(f"  skipping reference sheet(s) {skipped} in {path.name}")
         wb.close()
         if not visible:
             print(f"  no visible sheets in {path.name}, skipping")

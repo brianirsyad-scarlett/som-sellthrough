@@ -39,6 +39,7 @@ concurrency:
 permissions:
   contents: read
   actions: write     # only used to keep this workflow enabled (last step)
+  issues: write      # notify opens a MAIL| issue; Power Automate mails it
 
 env:
   PYTHONIOENCODING: utf-8
@@ -120,6 +121,7 @@ jobs:
       - name: Build the National Distribution quarter workbooks
         if: ${{ !cancelled() && steps.ready.outputs.ready == 'true' }}
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
           NOTIFY_TO: ${{ vars.NOTIFY_TO || 'brian.rinaldy@lmbg.co.id' }}

@@ -50,6 +50,17 @@ GCS_PREFIX = os.environ.get(
 ).strip("/")
 STATE_BLOB = os.environ.get("STATE_BLOB", "_state/som-sellthrough/msal_token_cache.json")
 
+import re
+
+# Only the regional workbooks ("1. Sumbagut Sell Through.xlsx" ... "8. Sulawesi Sell Through.xlsx") are sales data.
+# Anything else dropped into that OneDrive folder (an Excel "AutoRecovered" copy, a scratch list ...) used to be compiled too,
+# added its own columns to the table and made the publish check refuse every build.
+REGIONAL_RE = re.compile(r"^\d+\.\s.*Sell Through\.xlsx$", re.IGNORECASE)
+
+
+def is_regional(name: str) -> bool:
+    return bool(REGIONAL_RE.match(name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()))
+
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPE = ["Files.Read"]
 SEED_SHA = hashlib.sha256(SEED.encode()).hexdigest() if SEED else ""
@@ -134,7 +145,7 @@ def source_files():
 
 def wants(rel: str) -> bool:
     name = rel.rsplit("/", 1)[-1]
-    return name.lower().endswith(".xlsx") and not name.startswith("~$")   # skip Excel lock files
+    return name.lower().endswith(".xlsx") and not name.startswith("~$") and is_regional(name)   # skip Excel lock files + non-regional files
 
 
 def needs_copy(blob, item) -> tuple[bool, str]:
@@ -153,6 +164,9 @@ def main() -> int:
     uploaded, skipped, errors = [], 0, []
     for rel, item in source_files():
         if not wants(rel):
+            n = rel.rsplit("/", 1)[-1]
+            if n.lower().endswith(".xlsx") and not n.startswith("~$"):
+                log.warning("ignoring %s: not a regional 'N. <Region> Sell Through.xlsx' workbook", rel)
             continue
         key = f"{GCS_PREFIX}/{rel}"
         try:

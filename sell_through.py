@@ -30,6 +30,17 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import re
+
+# Only the regional workbooks ("1. Sumbagut Sell Through.xlsx" ... "8. Sulawesi Sell Through.xlsx") are sales data.
+# Anything else dropped into that OneDrive folder (an Excel "AutoRecovered" copy, a scratch list ...) used to be compiled too,
+# added its own columns to the table and made the publish check refuse every build.
+REGIONAL_RE = re.compile(r"^\d+\.\s.*Sell Through\.xlsx$", re.IGNORECASE)
+
+
+def is_regional(name: str) -> bool:
+    return bool(REGIONAL_RE.match(name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()))
+
 WIB = ZoneInfo("Asia/Jakarta")
 BUCKET = "bucket_som"
 SRC_PREFIX = "sales_parquet/raw/sell_through/Sell_Through_Offline_GT/"
@@ -53,7 +64,11 @@ MIN_DATE_FILLED = 0.95          # share of rows with a parseable Date (~1% are e
 def compile_folder(folder: Path) -> pd.DataFrame:
     from openpyxl import load_workbook
 
-    files = sorted(p for p in folder.glob("*.xlsx") if not p.name.startswith("~$"))
+    candidates = sorted(p for p in folder.glob("*.xlsx") if not p.name.startswith("~$"))
+    files = [p for p in candidates if is_regional(p.name)]
+    for p in candidates:
+        if not is_regional(p.name):
+            print(f"  IGNORING {p.name}: not a regional 'N. <Region> Sell Through.xlsx' workbook")
     if not files:
         raise SystemExit(f"No .xlsx files in {folder}")
 
@@ -116,7 +131,8 @@ def _bucket():
 
 def source_blobs(bucket):
     return [b for b in bucket.list_blobs(prefix=SRC_PREFIX)
-            if b.name.lower().endswith(".xlsx") and not b.name.rsplit("/", 1)[-1].startswith("~$")]
+            if b.name.lower().endswith(".xlsx") and not b.name.rsplit("/", 1)[-1].startswith("~$")
+            and is_regional(b.name)]
 
 
 def gate(bucket, force: bool) -> tuple[bool, str]:
@@ -152,6 +168,12 @@ def validate(new: pd.DataFrame, bucket) -> list[str]:
         with prod.open("rb") as fh:
             meta = pq.ParquetFile(fh).metadata
             prod_cols, prod_rows = meta.schema.to_arrow_schema().names, meta.num_rows
+        # The set of regional workbooks must not change silently: a missing region would drop its
+        # sales, an extra one is something nobody has signed off on.
+        prod_files = set(pd.read_parquet(io.BytesIO(prod.download_as_bytes()), columns=["SourceFile"])["SourceFile"])
+        new_files = set(new["SourceFile"])
+        if new_files != prod_files:
+            problems.append(f"workbooks differ from production: missing={sorted(prod_files - new_files)} new={sorted(new_files - prod_files)}")
         if list(new.columns) != list(prod_cols):
             problems.append(f"columns differ from production: new={list(new.columns)} production={prod_cols}")
         if len(new) < MIN_ROWS_VS_PRODUCTION * prod_rows:

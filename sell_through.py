@@ -61,6 +61,40 @@ MIN_DATE_FILLED = 0.95          # share of rows with a parseable Date (~1% are e
 # Compile - the laptop's 1_raw_compiler.py, one workbook load per file
 # --------------------------------------------------------------------------- #
 
+def fix_serial_dates(df, label=""):
+    """Two ways a Date cell can fail to be a date, both seen in the regional workbooks:
+    - a plain Excel serial number (e.g. 45597 = 1 Nov 2024) because the date format was lost;
+    - dd/mm/yyyy text (e.g. '13/10/2026'), which Excel leaves as text when the day is above 12.
+    Both are read as dates instead of falling out of the table as undated rows."""
+    if "Date" not in df.columns:
+        return df
+    import re as _re
+    col = df["Date"]
+    is_num = col.map(lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 36526 <= v <= 60000)
+    n = int(is_num.sum())
+    if n:
+        conv = pd.to_datetime(col.where(is_num).astype("float64"), unit="D", origin="1899-12-30")
+        col = col.where(~is_num, conv)
+        print(f"  {label}: {n:,} Date cells held plain Excel serial numbers - read as dates")
+    is_txt = col.map(lambda v: isinstance(v, str) and _re.fullmatch(r"\s*\d{1,2}/\d{1,2}/\d{4}\s*", v) is not None)
+    t = int(is_txt.sum())
+    if t:
+        conv = pd.to_datetime(col.where(is_txt).str.strip(), format="%d/%m/%Y", errors="coerce")
+        ok = is_txt & conv.notna()
+        col = col.where(~ok, conv)
+        print(f"  {label}: {int(ok.sum()):,} Date cells held dd/mm/yyyy text - read as dates")
+    df["Date"] = col
+    return df
+    col = df["Date"]
+    is_num = col.map(lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 36526 <= v <= 60000)
+    n = int(is_num.sum())
+    if n:
+        conv = pd.to_datetime(col.where(is_num).astype("float64"), unit="D", origin="1899-12-30")
+        df["Date"] = col.where(~is_num, conv)
+        print(f"  {label}: {n:,} Date cells held plain Excel serial numbers - read as dates")
+    return df
+
+
 def compile_folder(folder: Path) -> pd.DataFrame:
     from openpyxl import load_workbook
 
@@ -91,6 +125,7 @@ def compile_folder(folder: Path) -> pd.DataFrame:
             # Headers are hand-maintained per sheet, so the same column can arrive
             # padded ('KLASIFIKASI OUTLET ') or not. Normalise before the concat.
             df.columns = [str(c).strip() for c in df.columns]
+            df = fix_serial_dates(df, f"{path.name} / {sheet}")
             df["SourceFile"] = path.name
             df["SheetName"] = sheet
             frames.append(df)

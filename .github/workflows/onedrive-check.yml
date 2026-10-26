@@ -1,0 +1,30 @@
+﻿name: OneDrive check
+on:
+  workflow_dispatch: {}
+concurrency:
+  group: som-sellthrough
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp_key.json
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - name: Write GCS credentials
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: printf '%s' "$GCP_SA_KEY" > "$GOOGLE_APPLICATION_CREDENTIALS"
+      - name: Read the OneDrive cloud copies
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          MS_TOKEN_CACHE: ${{ secrets.MS_TOKEN_CACHE }}
+        run: python -u onedrive_check.py

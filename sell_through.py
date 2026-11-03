@@ -51,7 +51,7 @@ KEEP_BACKUPS = 30   # runs every 30 min now, so keep a few days of history
 
 # Reference sheets that are not sales data. They are kept hidden in the workbooks, but are skipped by name as
 # well, so unhiding one while working does not put its rows (and extra columns) in Distributor_Sales.parquet.
-EXCLUDED_SHEETS = {"master_data"}
+EXCLUDED_SHEETS = {"master_data", "recap_sumbagut"}   # recap_sumbagut: a colleague's duplicate of the Sumbagut distributors (24 columns)
 
 MIN_ROWS_VS_PRODUCTION = 0.90   # refuse a publish that would shrink the table by more than 10%
 MIN_DATE_FILLED = 0.95          # share of rows with a parseable Date (~1% are empty Bali Nusra rows with Total 0, as on the laptop)
